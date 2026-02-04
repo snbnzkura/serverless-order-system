@@ -21,8 +21,11 @@ This project implements a serverless order management system leveraging AWS clou
 
 ## Features
 
-- **Order Creation**: Create new orders with unique identifiers
-- **Automatic Status Tracking**: Orders initialized with PENDING status
+- **RESTful API**: Full CRUD operations via API Gateway
+- **Order Management**: Create, read, update, and delete orders
+- **Status Tracking**: Track orders through PENDING → PROCESSING → COMPLETED/CANCELLED
+- **Order Filtering**: List orders with optional status filtering
+- **Customer Information**: Store customer name and email with orders
 - **Serverless Architecture**: Auto-scaling with zero infrastructure management
 - **Pay-per-Request Pricing**: Cost-effective DynamoDB billing model
 - **Infrastructure as Code**: Version-controlled infrastructure deployment
@@ -96,6 +99,62 @@ terraform apply
 ```
 
 Review the planned changes and confirm with `yes` when prompted.
+
+### Get API Endpoint
+
+After deployment, get your API endpoint URL:
+
+```bash
+terraform output api_endpoint
+```
+
+This will display your API Gateway URL. Save this for testing.
+
+---
+
+## API Usage
+
+Your API supports the following operations:
+
+- **POST /orders** - Create a new order
+- **GET /orders** - List all orders (with optional `?status=PENDING` filter)
+- **GET /orders/{order_id}** - Get a specific order
+- **PUT /orders/{order_id}** - Update order status
+- **DELETE /orders/{order_id}** - Delete an order
+
+
+### Quick Test
+
+Create an order:
+```bash
+curl -X POST https://your-api-id.execute-api.ap-south-1.amazonaws.com/prod/orders \
+  -H "Content-Type: application/json" \
+  -d '{"item":"laptop","quantity":2,"customer_name":"john doe"}'
+```
+
+---
+
+## AWS Free Tier
+
+This project is designed to stay within AWS free tier limits:
+- **API Gateway**: 1M requests/month (12 months free)
+- **Lambda**: 1M requests/month (always free)
+- **DynamoDB**: 25GB storage (always free)
+
+---
+
+## Clean Up
+
+To avoid any charges, destroy the infrastructure when done:
+
+```bash
+cd infra
+terraform destroy
+```
+
+Confirm with `yes` when prompted.
+
+---
 
 ### Verify Deployment
 
