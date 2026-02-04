@@ -19,6 +19,13 @@ data "archive_file" "lambda_zip" {
   output_path = "${path.module}/lambda_function.zip"
 }
 
+# zip file for order expiry lambda
+data "archive_file" "expiry_lambda_zip" {
+  type        = "zip"
+  source_file = "${path.module}/../src/order_expiry.py"
+  output_path = "${path.module}/order_expiry.zip"
+}
+
 resource "aws_iam_role" "lambda_role" {
   name = "order_system_role"
 
@@ -207,4 +214,53 @@ output "lambda_function_name" {
 output "dynamodb_table_name" {
   value       = aws_dynamodb_table.orders_table.name
   description = "DynamoDB table name"
+}
+
+# ==========================================
+# order expiry scheduled lambda
+# ==========================================
+
+# lambda function for expiring old pending orders
+resource "aws_lambda_function" "order_expiry" {
+  filename         = data.archive_file.expiry_lambda_zip.output_path
+  function_name    = "OrderExpiry"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "order_expiry.lambda_handler"
+  runtime          = "python3.9"
+  timeout          = 60
+  source_code_hash = data.archive_file.expiry_lambda_zip.output_base64sha256
+}
+
+# eventbridge rule to trigger expiry check every hour
+resource "aws_cloudwatch_event_rule" "order_expiry_schedule" {
+  name                = "order-expiry-schedule"
+  description         = "triggers order expiry check every hour"
+  schedule_expression = "rate(1 hour)"
+}
+
+# eventbridge target to invoke the expiry lambda
+resource "aws_cloudwatch_event_target" "order_expiry_target" {
+  rule      = aws_cloudwatch_event_rule.order_expiry_schedule.name
+  target_id = "OrderExpiryTarget"
+  arn       = aws_lambda_function.order_expiry.arn
+}
+
+# permission for eventbridge to invoke the expiry lambda
+resource "aws_lambda_permission" "allow_eventbridge" {
+  statement_id  = "AllowExecutionFromEventBridge"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.order_expiry.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.order_expiry_schedule.arn
+}
+
+# outputs for expiry lambda
+output "expiry_lambda_function_name" {
+  value       = aws_lambda_function.order_expiry.function_name
+  description = "Order expiry Lambda function name"
+}
+
+output "expiry_schedule" {
+  value       = aws_cloudwatch_event_rule.order_expiry_schedule.schedule_expression
+  description = "Order expiry schedule (runs every hour)"
 }

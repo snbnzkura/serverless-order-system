@@ -2,6 +2,7 @@ import json
 import boto3
 import uuid
 from decimal import Decimal
+from datetime import datetime
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table('Orders')
@@ -57,6 +58,7 @@ def create_order(event):
         }
     
     order_id = str(uuid.uuid4())
+    created_at = datetime.utcnow().isoformat() + 'Z'
     
     item = {
         'order_id': order_id,
@@ -64,7 +66,8 @@ def create_order(event):
         'quantity': body['quantity'],
         'status': 'PENDING',
         'customer_name': body.get('customer_name', 'anonymous'),
-        'customer_email': body.get('customer_email', '')
+        'customer_email': body.get('customer_email', ''),
+        'created_at': created_at
     }
     
     table.put_item(Item=item)
@@ -129,7 +132,7 @@ def update_order(event, order_id):
             'body': json.dumps({'error': 'status field is required'})
         }
     
-    allowed_statuses = ['PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED']
+    allowed_statuses = ['PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'EXPIRED']
     if body['status'].upper() not in allowed_statuses:
         return {
             'statusCode': 400,
