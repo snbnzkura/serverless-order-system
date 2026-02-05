@@ -6,7 +6,7 @@ from decimal import Decimal
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table('Orders')
 
-EXPIRY_HOURS = 24
+EXPIRY_HOURS = 60
 
 # helper function to convert decimal to int/float for json serialization
 def decimal_to_number(obj):
