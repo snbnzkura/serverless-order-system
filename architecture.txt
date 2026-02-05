@@ -1,0 +1,300 @@
+================================================================================
+                    SERVERLESS ORDER SYSTEM - ARCHITECTURE DIAGRAM
+================================================================================
+
+                                 AWS CLOUD (ap-south-1)
+    ┌──────────────────────────────────────────────────────────────────────────┐
+    │                                                                          │
+    │   ┌─────────────┐                                                        │
+    │   │   CLIENT    │                                                        │
+    │   │  (Browser/  │                                                        │
+    │   │   cURL/App) │                                                        │
+    │   └──────┬──────┘                                                        │
+    │          │                                                               │
+    │          │ HTTPS Requests                                                │
+    │          ▼                                                               │
+    │   ┌──────────────────────────────────────────────────────────────┐       │
+    │   │                    API GATEWAY (OrderAPI)                    │       │
+    │   │                        Stage: prod                           │       │
+    │   │                                                              │       │
+    │   │  ┌────────────────────────────────────────────────────────┐  │       │
+    │   │  │                     REST ENDPOINTS                     │  │       │
+    │   │  │                                                        │  │       │
+    │   │  │   POST   /orders              → Create new order       │  │       │
+    │   │  │   GET    /orders              → List all orders        │  │       │
+    │   │  │   GET    /orders/{order_id}   → Get single order       │  │       │
+    │   │  │   PUT    /orders/{order_id}   → Update order status    │  │       │
+    │   │  │   DELETE /orders/{order_id}   → Delete order           │  │       │
+    │   │  │                                                        │  │       │
+    │   │  └────────────────────────────────────────────────────────┘  │       │
+    │   └─────────────────────────┬────────────────────────────────────┘       │
+    │                             │                                            │
+    │                             │ AWS_PROXY Integration                      │
+    │                             ▼                                            │
+    │   ┌──────────────────────────────────────────────────────────────┐       │
+    │   │                                                              │       │
+    │   │                    LAMBDA FUNCTIONS                          │       │
+    │   │                    (Python 3.9)                              │       │
+    │   │                                                              │       │
+    │   │  ┌─────────────────────────┐   ┌─────────────────────────┐   │       │
+    │   │  │     OrderReceiver       │   │      OrderExpiry        │   │       │
+    │   │  │     (app.py)            │   │    (order_expiry.py)    │   │       │
+    │   │  │                         │   │                         │   │       │
+    │   │  │  • create_order()       │   │  • Expires PENDING      │   │       │
+    │   │  │  • get_order()          │   │    orders older than    │   │       │
+    │   │  │  • list_orders()        │   │    60 hours             │   │       │
+    │   │  │  • update_order()       │   │  • Sets status to       │   │       │
+    │   │  │  • delete_order()       │   │    EXPIRED              │   │       │
+    │   │  │                         │   │  • Timeout: 60s         │   │       │
+    │   │  └───────────┬─────────────┘   └─────────────┬───────────┘   │       │
+    │   │              │                               │               │       │
+    │   └──────────────┼───────────────────────────────┼───────────────┘       │
+    │                  │                               │                       │
+    │                  │ DynamoDB Operations           │ Triggered by          │
+    │                  │ (CRUD)                        │ EventBridge           │
+    │                  │                               │                       │
+    │                  ▼                               │                       │
+    │   ┌──────────────────────────────┐               │                       │
+    │   │         DYNAMODB             │◄──────────────┘                       │
+    │   │       Table: Orders          │                                       │
+    │   │   Billing: PAY_PER_REQUEST   │                                       │
+    │   │                              │                                       │
+    │   │  ┌────────────────────────┐  │                                       │
+    │   │  │    Table Schema        │  │                                       │
+    │   │  │                        │  │                                       │
+    │   │  │  • order_id (PK)  [S]  │  │                                       │
+    │   │  │  • item           [S]  │  │                                       │
+    │   │  │  • quantity       [N]  │  │                                       │
+    │   │  │  • status         [S]  │  │                                       │
+    │   │  │  • customer_name  [S]  │  │                                       │
+    │   │  │  • customer_email [S]  │  │                                       │
+    │   │  │  • created_at     [S]  │  │                                       │
+    │   │  │  • expired_at     [S]  │  │                                       │
+    │   │  └────────────────────────┘  │                                       │
+    │   └──────────────────────────────┘                                       │
+    │                                                                          │
+    │                                                                          │
+    │   ┌──────────────────────────────┐   ┌────────────────────────────────┐  │
+    │   │        EVENTBRIDGE           │   │         CLOUDWATCH             │  │
+    │   │                              │   │                                │  │
+    │   │  Rule: order-expiry-schedule │   │  Log Groups:                   │  │
+    │   │  Schedule: rate(1 hour)      │   │  • /aws/lambda/OrderReceiver   │  │
+    │   │                              │   │  • /aws/lambda/OrderExpiry     │  │
+    │   │  Target: OrderExpiry Lambda  │   │                                │  │
+    │   └──────────────────────────────┘   └────────────────────────────────┘  │
+    │                                                                          │
+    │                                                                          │
+    │   ┌──────────────────────────────────────────────────────────────────┐   │
+    │   │                         IAM ROLE                                 │   │
+    │   │                    (order_system_role)                           │   │
+    │   │                                                                  │   │
+    │   │   Permissions:                                                   │   │
+    │   │   • dynamodb:PutItem, GetItem, Scan, UpdateItem, DeleteItem      │   │
+    │   │   • logs:CreateLogGroup, CreateLogStream, PutLogEvents           │   │
+    │   │                                                                  │   │
+    │   │   Trust: lambda.amazonaws.com                                    │   │
+    │   └──────────────────────────────────────────────────────────────────┘   │
+    │                                                                          │
+    └──────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+                              DATA FLOW DIAGRAMS
+================================================================================
+
+1. CREATE ORDER FLOW
+────────────────────
+
+   Client                API Gateway          OrderReceiver          DynamoDB
+     │                       │                     │                    │
+     │  POST /orders         │                     │                    │
+     │  {item, quantity,     │                     │                    │
+     │   customer_name}      │                     │                    │
+     │──────────────────────>│                     │                    │
+     │                       │  Invoke Lambda      │                    │
+     │                       │────────────────────>│                    │
+     │                       │                     │  PutItem           │
+     │                       │                     │  (order + UUID)    │
+     │                       │                     │───────────────────>│
+     │                       │                     │                    │
+     │                       │                     │  Success           │
+     │                       │                     │<───────────────────│
+     │                       │  201 Created        │                    │
+     │                       │<────────────────────│                    │
+     │  {order_id, status:   │                     │                    │
+     │   PENDING}            │                     │                    │
+     │<──────────────────────│                     │                    │
+
+
+2. ORDER STATUS LIFECYCLE
+─────────────────────────
+
+   ┌─────────────┐     PUT /orders/{id}      ┌─────────────┐
+   │   PENDING   │──────{status: PROCESSING}─>│ PROCESSING  │
+   └─────────────┘                           └─────────────┘
+         │                                         │
+         │                                         │ PUT /orders/{id}
+         │ 60 hours elapsed                        │ {status: COMPLETED}
+         │ (OrderExpiry Lambda)                    ▼
+         │                                   ┌─────────────┐
+         ▼                                   │  COMPLETED  │
+   ┌─────────────┐                           └─────────────┘
+   │   EXPIRED   │
+   └─────────────┘
+         ▲
+         │ PUT /orders/{id}
+         │ {status: CANCELLED}
+         │
+   ┌─────────────┐
+   │  CANCELLED  │
+   └─────────────┘
+
+
+3. ORDER EXPIRY SCHEDULED FLOW
+──────────────────────────────
+
+   EventBridge              OrderExpiry              DynamoDB
+       │                        │                       │
+       │  rate(1 hour)          │                       │
+       │  trigger               │                       │
+       │───────────────────────>│                       │
+       │                        │  Scan (status=PENDING)│
+       │                        │──────────────────────>│
+       │                        │                       │
+       │                        │  Pending orders       │
+       │                        │<──────────────────────│
+       │                        │                       │
+       │                        │  For each order       │
+       │                        │  created > 60hrs ago: │
+       │                        │                       │
+       │                        │  UpdateItem           │
+       │                        │  (status=EXPIRED)     │
+       │                        │──────────────────────>│
+       │                        │                       │
+       │                        │  Log results to       │
+       │                        │  CloudWatch           │
+       │                        │                       │
+
+
+================================================================================
+                            INFRASTRUCTURE (TERRAFORM)
+================================================================================
+
+    ┌───────────────────────────────────────────────────────────────────────┐
+    │                          infra/main.tf                                │
+    │                                                                       │
+    │   RESOURCES CREATED:                                                  │
+    │   ─────────────────                                                   │
+    │                                                                       │
+    │   ├── aws_dynamodb_table.orders_table                                 │
+    │   │                                                                   │
+    │   ├── aws_iam_role.lambda_role                                        │
+    │   ├── aws_iam_role_policy.lambda_policy                               │
+    │   │                                                                   │
+    │   ├── aws_lambda_function.order_receiver                              │
+    │   ├── aws_lambda_function.order_expiry                                │
+    │   │                                                                   │
+    │   ├── aws_api_gateway_rest_api.order_api                              │
+    │   ├── aws_api_gateway_resource.orders                                 │
+    │   ├── aws_api_gateway_resource.order_by_id                            │
+    │   ├── aws_api_gateway_method (5x: POST, GET, GET, PUT, DELETE)        │
+    │   ├── aws_api_gateway_integration (5x)                                │
+    │   ├── aws_api_gateway_deployment.order_api_deployment                 │
+    │   │                                                                   │
+    │   ├── aws_cloudwatch_event_rule.order_expiry_schedule                 │
+    │   ├── aws_cloudwatch_event_target.order_expiry_target                 │
+    │   │                                                                   │
+    │   └── aws_lambda_permission (2x: API Gateway, EventBridge)            │
+    │                                                                       │
+    │   OUTPUTS:                                                            │
+    │   ────────                                                            │
+    │   • api_endpoint              - API Gateway URL                       │
+    │   • lambda_function_name      - OrderReceiver function name           │
+    │   • dynamodb_table_name       - Orders table name                     │
+    │   • expiry_lambda_function_name - OrderExpiry function name           │
+    │   • expiry_schedule           - EventBridge schedule                  │
+    │                                                                       │
+    └───────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+                              PROJECT STRUCTURE
+================================================================================
+
+    serverless-order-system/
+    │
+    ├── src/
+    │   ├── app.py              # Main Lambda handler (CRUD operations)
+    │   └── order_expiry.py     # Scheduled expiry Lambda
+    │
+    ├── infra/
+    │   ├── main.tf             # Terraform infrastructure definition
+    │   ├── terraform.tfstate   # Terraform state
+    │   └── lambda_function.zip # Packaged Lambda code (auto-generated)
+    │
+    ├── tests/                  # Test suite directory
+    │
+    ├── architecture.txt        # This file
+    ├── requirements.txt        # Python dependencies (boto3)
+    ├── README.md               # Project documentation
+    └── LICENSE                 # MIT License
+
+
+================================================================================
+                              API REFERENCE
+================================================================================
+
+    BASE URL: https://{api-id}.execute-api.ap-south-1.amazonaws.com/prod
+
+    ┌──────────┬─────────────────────┬─────────────────────────────────────┐
+    │  METHOD  │      ENDPOINT       │            DESCRIPTION              │
+    ├──────────┼─────────────────────┼─────────────────────────────────────┤
+    │  POST    │  /orders            │  Create a new order                 │
+    │  GET     │  /orders            │  List all orders (?status=PENDING)  │
+    │  GET     │  /orders/{order_id} │  Get a specific order               │
+    │  PUT     │  /orders/{order_id} │  Update order status                │
+    │  DELETE  │  /orders/{order_id} │  Delete an order                    │
+    └──────────┴─────────────────────┴─────────────────────────────────────┘
+
+    ORDER STATUSES: PENDING → PROCESSING → COMPLETED | CANCELLED | EXPIRED
+
+
+================================================================================
+                           SECURITY ARCHITECTURE
+================================================================================
+
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │                                                                         │
+    │                         SECURITY LAYERS                                 │
+    │                                                                         │
+    │   ┌─────────────────────────────────────────────────────────────────┐   │
+    │   │  API Gateway                                                    │   │
+    │   │  • HTTPS only (TLS encryption in transit)                       │   │
+    │   │  • Authorization: NONE (for demo - add API keys for prod)       │   │
+    │   │  • Request validation available                                 │   │
+    │   └─────────────────────────────────────────────────────────────────┘   │
+    │                                                                         │
+    │   ┌─────────────────────────────────────────────────────────────────┐   │
+    │   │  Lambda Functions                                               │   │
+    │   │  • IAM role with least privilege (order_system_role)            │   │
+    │   │  • No VPC (public AWS services)                                 │   │
+    │   │  • Environment isolated per invocation                          │   │
+    │   └─────────────────────────────────────────────────────────────────┘   │
+    │                                                                         │
+    │   ┌─────────────────────────────────────────────────────────────────┐   │
+    │   │  DynamoDB                                                       │   │
+    │   │  • Encryption at rest (AWS managed)                             │   │
+    │   │  • IAM-based access control                                     │   │
+    │   │  • No public endpoint access                                    │   │
+    │   └─────────────────────────────────────────────────────────────────┘   │
+    │                                                                         │
+    │   ┌─────────────────────────────────────────────────────────────────┐   │
+    │   │  CloudWatch Logs                                                │   │
+    │   │  • Encrypted by default                                         │   │
+    │   │  • IAM access required                                          │   │
+    │   └─────────────────────────────────────────────────────────────────┘   │
+    │                                                                         │
+    └─────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
